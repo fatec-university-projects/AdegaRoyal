@@ -5,6 +5,7 @@ using WorkEz.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -43,7 +44,7 @@ public class AuthController(
             .AsNoTracking()
             .Include(u => u.Password)
             .Include(u => u.Claims)
-            .Where(u => u.Email == normalizedEmail && u.IsActive)
+            .Where(u => u.Email == normalizedEmail && u.AccountStatus == Enums.AccountStatus.Active)
             .FirstOrDefaultAsync();
 
         // 2. Validate credentials — use constant-time comparison via BCrypt.Verify
@@ -105,7 +106,7 @@ public class AuthController(
                 .ThenInclude(u => u.Claims)
             .FirstOrDefaultAsync(r => r.Token == dto.RefreshToken && !r.IsRevoked);
 
-        if (stored is null || stored.ExpiresAt < DateTime.UtcNow || !stored.User.IsActive)
+        if (stored is null || stored.ExpiresAt < DateTime.UtcNow || stored.User.AccountStatus != Enums.AccountStatus.Active)
             return Unauthorized(new { message = "Refresh token inválido ou expirado." });
 
         // Revoke consumed token (rotation)
@@ -153,11 +154,21 @@ public class AuthController(
         => await RegisterUserWithRole(dto, Enums.UserRole.Customer);
 
     /// <summary>
+    /// Registers a new service provider. Public — no authentication required.
+    /// </summary>
+    [HttpPost("register/provider")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(UserDto), 201)]
+    [ProducesResponseType(400)]
+    [ProducesResponseType(409)]
+    public async Task<ActionResult<UserDto>> RegisterProvider([FromBody] RegisterUserDto dto)
+        => await RegisterUserWithRole(dto, Enums.UserRole.ServiceProvider);
+
+    /// <summary>
     /// Registers a new admin. Requires an existing Admin JWT.
     /// </summary>
     [HttpPost("register/admin")]
-   // [Authorize(Policy = "AdminOnly")]
-   [AllowAnonymous]
+    [Authorize(Policy = "AdminOnly")]
     [ProducesResponseType(typeof(UserDto), 201)]
     [ProducesResponseType(400)]
     [ProducesResponseType(401)]
@@ -167,6 +178,58 @@ public class AuthController(
         => await RegisterUserWithRole(dto, Enums.UserRole.Admin);
 
 
+
+    // ─── Me ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the profile of the currently authenticated user, resolved from the JWT.
+    /// </summary>
+    [HttpGet("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserDto), 200)]
+    [ProducesResponseType(401)]
+    public async Task<ActionResult<UserDto>> Me()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                     ?? User.FindFirstValue("sub");
+
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var user = await context.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        return user is null ? NotFound() : Ok(MapToDto(user));
+    }
+
+    // ─── Logout ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Revokes the provided refresh token, effectively ending the session.
+    /// The access token remains valid until its natural expiry (15 min).
+    /// </summary>
+    [HttpPost("logout")]
+    [Authorize]
+    [ProducesResponseType(204)]
+    [ProducesResponseType(400)]
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequestDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var stored = await context.RefreshTokens
+            .FirstOrDefaultAsync(r => r.Token == dto.RefreshToken && !r.IsRevoked);
+
+        if (stored is not null)
+        {
+            stored.IsRevoked = true;
+            await context.SaveChangesAsync();
+        }
+
+        // Always return 204 — never reveal whether the token existed
+        return NoContent();
+    }
 
     // ─── Password Reset ───────────────────────────────────────────────────────
 
@@ -181,7 +244,7 @@ public class AuthController(
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
     {
         var normalizedEmail = dto.Email.Trim().ToLowerInvariant();
-        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.IsActive);
+        var user = await context.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.AccountStatus == Enums.AccountStatus.Active);
         
         if (user == null)
             return NotFound(new { message = "Usuário não encontrado." });
@@ -215,7 +278,7 @@ public class AuthController(
 
         var user = await context.Users
             .Include(u => u.Password)
-            .FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.IsActive);
+            .FirstOrDefaultAsync(u => u.Email == normalizedEmail && u.AccountStatus == Enums.AccountStatus.Active);
 
         if (user == null || user.Password == null)
             return BadRequest(new { message = "Usuário não encontrado ou inconsistente." });
@@ -260,7 +323,13 @@ public class AuthController(
             return Conflict(new { message = "Já existe uma conta com esse e-mail." });
 
         // Create user aggregate
-        var user = new User(dto.Name, normalizedEmail, role);
+        var user = new User
+        {
+            Name          = dto.Name,
+            Email         = normalizedEmail,
+            Role          = role,
+            AccountStatus = Enums.AccountStatus.Active
+        };
 
         var passwordRecord = new UserPassword
         {
@@ -270,6 +339,25 @@ public class AuthController(
 
         context.Users.Add(user);
         context.UserPasswords.Add(passwordRecord);
+
+        if (role == Enums.UserRole.Customer)
+        {
+            var customer = new Customer
+            {
+                UserId = user.Id
+            };
+            context.Customers.Add(customer);
+        }
+        else if (role == Enums.UserRole.ServiceProvider)
+        {
+            var provider = new Entities.ServiceProvider
+            {
+                UserId = user.Id,
+                ProfessionalDescription = "Novo prestador de serviços"
+            };
+            context.Providers.Add(provider);
+        }
+
         await context.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetProfile), new { id = user.Id }, MapToDto(user));
@@ -282,7 +370,7 @@ public class AuthController(
         Email     = user.Email,
         Role      = user.Role.ToString(),
         CreatedAt = user.CreatedAt,
-        IsActive  = user.IsActive
+        AccountStatus = user.AccountStatus.ToString()
     };
 
     // ─── Token Generators para Password Reset ─────────────────────────────────

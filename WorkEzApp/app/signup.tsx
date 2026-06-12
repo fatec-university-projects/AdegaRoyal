@@ -1,26 +1,170 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, User, Mail, Lock, Phone } from 'lucide-react-native';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { AntigravityTheme } from '../constants/theme';
+import {
+  View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView,
+  Platform, ScrollView, ActivityIndicator,
+} from 'react-native';
+import { WorkEzTheme } from '../constants/theme';
+import { authService } from '../services/authService';
+import { useAuth } from '../contexts/AuthContext';
+
+// ─── Validações & Máscaras ────────────────────────────────────────────────────
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+/** Máscara dinâmica: celular (00) 00000-0000 ou fixo (00) 0000-0000 */
+function applyPhoneMask(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 10) {
+    // Fixo: (00) 0000-0000
+    return digits
+      .replace(/^(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{4})(\d)/, '$1-$2');
+  }
+  // Celular: (00) 00000-0000
+  return digits
+    .replace(/^(\d{2})(\d)/, '($1) $2')
+    .replace(/(\d{5})(\d)/, '$1-$2');
+}
+
+// ─── SignUp Screen ─────────────────────────────────────────────────────────────
+// AUDITORIA FIX:
+// - Lê o role selecionado na tela de profile-choice
+// - Se role não definido → redireciona para /profile-choice
+// - Chama o endpoint correto (customer ou provider)
+// - Valida todos os campos antes de enviar
+// - Máscaras em telefone
 
 export default function SignUp() {
   const router = useRouter();
+  const { signIn } = useAuth();
+
+  const [selectedRole, setSelectedRole] = useState<'client' | 'provider' | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     password: '',
+    confirmPassword: '',
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const handleSignUp = () => {
-    router.push('/profile-choice');
+  // Carrega o papel escolhido
+  useEffect(() => {
+    authService.getSelectedRole().then((role) => {
+      if (!role) {
+        // Sem papel definido: força escolha
+        router.replace('/profile-choice');
+      } else {
+        setSelectedRole(role);
+      }
+    });
+  }, []);
+
+  const updateField = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => ({ ...prev, [field]: '' }));
+    setApiError(null);
+  };
+
+  const handlePhoneChange = (value: string) => {
+    updateField('phone', applyPhoneMask(value));
+  };
+
+  const validate = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.name.trim() || formData.name.trim().length < 3) {
+      newErrors.name = 'Nome deve ter pelo menos 3 caracteres';
+    }
+
+    if (!formData.email.trim()) {
+      newErrors.email = 'E-mail é obrigatório';
+    } else if (!isValidEmail(formData.email)) {
+      newErrors.email = 'Informe um e-mail válido';
+    }
+
+    if (!formData.phone) {
+      newErrors.phone = 'Telefone é obrigatório';
+    } else {
+      const digits = formData.phone.replace(/\D/g, '');
+      if (digits.length < 10) {
+        newErrors.phone = 'Informe um telefone válido';
+      }
+    }
+
+    if (!formData.password) {
+      newErrors.password = 'Senha é obrigatória';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'A senha deve ter pelo menos 8 caracteres';
+    }
+
+    if (formData.confirmPassword !== formData.password) {
+      newErrors.confirmPassword = 'As senhas não coincidem';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSignUp = async () => {
+    setApiError(null);
+    if (!validate()) return;
+
+    setLoading(true);
+    try {
+      let result;
+      if (selectedRole === 'provider') {
+        result = await authService.registerProvider(
+          formData.name,
+          formData.email,
+          formData.password,
+          formData.phone,
+        );
+      } else {
+        result = await authService.registerCustomer(
+          formData.name,
+          formData.email,
+          formData.password,
+          formData.phone,
+        );
+      }
+
+      if (result.error) {
+        setApiError(result.error);
+        return;
+      }
+
+      // Registro bem-sucedido: faz login automático
+      const loginResult = await authService.login(formData.email, formData.password);
+      if (loginResult.error) {
+        // Registro OK mas login falhou: vai para tela de login
+        router.replace('/login');
+        return;
+      }
+
+      const user = await authService.getUser();
+      if (user) signIn(user);
+
+      if (selectedRole === 'provider') {
+        router.replace('/provider/work-area' as any);
+      } else {
+        router.replace('/client' as any);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
@@ -30,11 +174,11 @@ export default function SignUp() {
             onPress={() => router.back()}
             style={styles.backButton}
           >
-            <ArrowLeft size={24} color={AntigravityTheme.colors.text} />
+            <ArrowLeft size={24} color={WorkEzTheme.colors.text} />
           </TouchableOpacity>
 
           <Text style={styles.title}>
-            Criar conta
+            {selectedRole === 'provider' ? 'Seja um prestador' : 'Criar conta'}
           </Text>
           <Text style={styles.subtitle}>
             Preencha seus dados para começar
@@ -42,53 +186,89 @@ export default function SignUp() {
         </View>
 
         <View style={styles.formContainer}>
+          {/* Nome */}
           <View style={styles.inputWrapper}>
-            <User size={20} color={AntigravityTheme.colors.textSecondary} style={styles.inputIcon} />
+            <User size={20} color={WorkEzTheme.colors.textSecondary} style={styles.inputIcon} />
             <Input
               placeholder="Nome completo"
               value={formData.name}
-              onChangeText={(val) => setFormData({ ...formData, name: val })}
+              onChangeText={(val) => updateField('name', val)}
+              autoCapitalize="words"
+              autoComplete="name"
+              error={errors.name}
               style={styles.inputWithIcon}
             />
           </View>
 
+          {/* E-mail */}
           <View style={styles.inputWrapper}>
-            <Mail size={20} color={AntigravityTheme.colors.textSecondary} style={styles.inputIcon} />
+            <Mail size={20} color={WorkEzTheme.colors.textSecondary} style={styles.inputIcon} />
             <Input
-              type="email"
               placeholder="E-mail"
               value={formData.email}
-              onChangeText={(val) => setFormData({ ...formData, email: val })}
+              onChangeText={(val) => updateField('email', val.trim().toLowerCase())}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoComplete="email"
+              error={errors.email}
               style={styles.inputWithIcon}
             />
           </View>
 
+          {/* Telefone com máscara */}
           <View style={styles.inputWrapper}>
-            <Phone size={20} color={AntigravityTheme.colors.textSecondary} style={styles.inputIcon} />
+            <Phone size={20} color={WorkEzTheme.colors.textSecondary} style={styles.inputIcon} />
             <Input
-              type="tel"
-              placeholder="Telefone"
+              placeholder="Telefone (00) 00000-0000"
               value={formData.phone}
-              onChangeText={(val) => setFormData({ ...formData, phone: val })}
+              onChangeText={handlePhoneChange}
+              keyboardType="phone-pad"
+              autoComplete="tel"
+              maxLength={15}
+              error={errors.phone}
               style={styles.inputWithIcon}
             />
           </View>
 
+          {/* Senha */}
           <View style={styles.inputWrapper}>
-            <Lock size={20} color={AntigravityTheme.colors.textSecondary} style={styles.inputIcon} />
+            <Lock size={20} color={WorkEzTheme.colors.textSecondary} style={styles.inputIcon} />
             <Input
-              type="password"
-              placeholder="Criar senha"
+              secureTextEntry
+              placeholder="Criar senha (mín. 8 caracteres)"
               value={formData.password}
-              onChangeText={(val) => setFormData({ ...formData, password: val })}
+              onChangeText={(val) => updateField('password', val)}
+              autoComplete="new-password"
+              error={errors.password}
+              style={styles.inputWithIcon}
+            />
+          </View>
+
+          {/* Confirmar Senha */}
+          <View style={styles.inputWrapper}>
+            <Lock size={20} color={WorkEzTheme.colors.textSecondary} style={styles.inputIcon} />
+            <Input
+              secureTextEntry
+              placeholder="Confirmar senha"
+              value={formData.confirmPassword}
+              onChangeText={(val) => updateField('confirmPassword', val)}
+              autoComplete="new-password"
+              error={errors.confirmPassword}
               style={styles.inputWithIcon}
             />
           </View>
         </View>
 
+        {/* Erro da API */}
+        {apiError && (
+          <View style={styles.apiErrorContainer}>
+            <Text style={styles.apiErrorText}>{apiError}</Text>
+          </View>
+        )}
+
         <View style={styles.footerContainer}>
-          <Button fullWidth onPress={handleSignUp}>
-            Continuar
+          <Button variant="secondary" fullWidth onPress={handleSignUp} disabled={loading}>
+            {loading ? <ActivityIndicator color="#2563EB" size="small" /> : 'Criar conta'}
           </Button>
 
           <View style={styles.loginContainer}>
@@ -110,7 +290,7 @@ export default function SignUp() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AntigravityTheme.colors.background,
+    backgroundColor: WorkEzTheme.colors.background,
   },
   scrollContent: {
     flexGrow: 1,
@@ -127,18 +307,18 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   title: {
-    ...AntigravityTheme.typography.xl,
-    fontWeight: AntigravityTheme.typography.fontWeight.bold,
-    color: AntigravityTheme.colors.text,
+    ...WorkEzTheme.typography.xl,
+    fontWeight: WorkEzTheme.typography.fontWeight.bold,
+    color: WorkEzTheme.colors.text,
     marginBottom: 8,
   },
   subtitle: {
-    ...AntigravityTheme.typography.base,
-    color: AntigravityTheme.colors.textSecondary,
+    ...WorkEzTheme.typography.base,
+    color: WorkEzTheme.colors.textSecondary,
   },
   formContainer: {
     gap: 16,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   inputWrapper: {
     position: 'relative',
@@ -152,6 +332,19 @@ const styles = StyleSheet.create({
   inputWithIcon: {
     paddingLeft: 48,
   },
+  apiErrorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  apiErrorText: {
+    ...WorkEzTheme.typography.sm,
+    color: WorkEzTheme.colors.danger,
+    textAlign: 'center',
+  },
   footerContainer: {
     gap: 12,
   },
@@ -162,12 +355,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   loginText: {
-    ...AntigravityTheme.typography.sm,
-    color: AntigravityTheme.colors.textSecondary,
+    ...WorkEzTheme.typography.sm,
+    color: WorkEzTheme.colors.textSecondary,
   },
   loginLinkText: {
-    ...AntigravityTheme.typography.sm,
-    fontWeight: AntigravityTheme.typography.fontWeight.medium,
+    ...WorkEzTheme.typography.sm,
+    fontWeight: WorkEzTheme.typography.fontWeight.medium,
     color: '#2563EB',
   },
 });

@@ -1,81 +1,34 @@
 using WorkEz.Api.Data;
-using WorkEz.Api.DTOs;
 using WorkEz.Api.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorkEz.Api.Services;
 
-/// <summary>
-/// Service implementation for managing product categories using primary constructor.
-/// </summary>
 public class CategoryService(AppDbContext context) : ICategoryService
 {
-    public async Task<IEnumerable<CategoryDto>> GetAllCategoriesAsync()
-    {
-        return await context.Categories
-            .Select(c => new CategoryDto
-            {
-                Id = c.Id,
-                Name = c.Name,
-                Description = c.Description
-            })
-            .ToListAsync();
-    }
+    public async Task<IEnumerable<Category>> GetAllAsync()
+        => await context.Categories.AsNoTracking().ToListAsync();
 
-    public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
-    {
-        var category = await context.Categories.FindAsync(id);
-        if (category == null)
-            return null;
+    public async Task<Category?> GetByIdAsync(Guid id)
+        => await context.Categories.FindAsync(id);
 
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Description = category.Description
-        };
-    }
-
-    public async Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto dto)
+    public async Task CreateAsync(Category category)
     {
-        var category = new Category(Guid.NewGuid(), dto.Name, dto.Description);
         context.Categories.Add(category);
         await context.SaveChangesAsync();
-
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Description = category.Description
-        };
     }
 
-    public async Task<CategoryDto?> UpdateCategoryAsync(Guid id, CreateCategoryDto dto)
+    public async Task UpdateAsync(Category category)
     {
-        var category = await context.Categories.FindAsync(id);
-        if (category == null)
-            return null;
-
-        category.Name = dto.Name;
-        category.Description = dto.Description;
+        context.Categories.Update(category);
         await context.SaveChangesAsync();
-
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Description = category.Description
-        };
     }
 
-    public async Task<bool> DeleteCategoryAsync(Guid id)
+    public async Task DeleteAsync(Guid id)
     {
-        var category = await context.Categories.FindAsync(id);
-        if (category == null)
-            return false;
-
-        context.Categories.Remove(category);
+        var entity = await context.Categories.FindAsync(id);
+        if (entity is null) return;
+        context.Categories.Remove(entity);
         await context.SaveChangesAsync();
-        return true;
     }
 }

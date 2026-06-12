@@ -1,11 +1,12 @@
 import React, { Children } from 'react';
 import { Pressable, PressableProps, Text, StyleSheet, ViewStyle, TextStyle } from 'react-native';
-import { AntigravityTheme } from '../constants/theme';
+import { WorkEzTheme } from '../constants/theme';
 
-interface ButtonProps extends Omit<PressableProps, 'style'> {
+interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> {
   variant?: 'primary' | 'secondary' | 'ghost';
   fullWidth?: boolean;
   style?: ViewStyle | ViewStyle[];
+  children?: React.ReactNode;
 }
 
 export function Button({
@@ -21,7 +22,7 @@ export function Button({
 
   return (
     <Pressable
-      style={({ pressed }) => [
+      style={({ pressed }) => StyleSheet.flatten([
         styles.baseButton,
         isPrimary && styles.primaryButton,
         isSecondary && styles.secondaryButton,
@@ -30,7 +31,7 @@ export function Button({
         pressed && styles.pressed,
         props.disabled && styles.disabled,
         style,
-      ]}
+      ])}
       {...props}
     >
       {Children.map(children, (child) => {
@@ -38,12 +39,12 @@ export function Button({
         if (typeof child === 'string' || typeof child === 'number') {
           return (
             <Text
-              style={[
+              style={StyleSheet.flatten([
                 styles.baseText,
                 isPrimary && styles.primaryText,
                 isSecondary && styles.secondaryText,
                 isGhost && styles.ghostText,
-              ]}
+              ])}
             >
               {child}
             </Text>
@@ -59,11 +60,11 @@ const styles = StyleSheet.create({
   baseButton: {
     paddingHorizontal: 24,
     paddingVertical: 14,
-    borderRadius: AntigravityTheme.borderRadius.lg,
+    borderRadius: WorkEzTheme.borderRadius.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: AntigravityTheme.spacing.sm,
+    gap: WorkEzTheme.spacing.sm,
   },
   fullWidth: {
     width: '100%',
@@ -84,25 +85,25 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   secondaryButton: {
-    backgroundColor: AntigravityTheme.colors.background,
+    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: AntigravityTheme.colors.border,
+    borderColor: '#2563EB',
   },
   ghostButton: {
     backgroundColor: 'transparent',
   },
   baseText: {
     textAlign: 'center',
-    ...AntigravityTheme.typography.base,
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
+    ...WorkEzTheme.typography.base,
+    fontWeight: WorkEzTheme.typography.fontWeight.semibold,
   },
   primaryText: {
     color: '#FFFFFF',
   },
   secondaryText: {
-    color: AntigravityTheme.colors.text,
+    color: '#2563EB',
   },
   ghostText: {
-    color: AntigravityTheme.colors.textSecondary,
+    color: WorkEzTheme.colors.textSecondary,
   },
 });

@@ -1,48 +1,66 @@
-import { useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useState, useMemo, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { ServiceCard } from '../../components/ServiceCard';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { AntigravityTheme } from '../../constants/theme';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { WorkEzTheme } from '../../constants/theme';
+import { useFetch } from '../../hooks/useFetch';
+import { useAuth } from '../../contexts/AuthContext';
+
+interface Service {
+  id: string;
+  category: string;
+  description: string;
+  date: string;
+  status: 'in-progress' | 'completed' | 'cancelled';
+  professional?: string;
+}
 
 export default function MyServices() {
   const router = useRouter();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'in-progress' | 'completed' | 'cancelled'>('in-progress');
 
-  const services = {
-    'in-progress': [
-      {
-        id: 1,
-        category: 'Encanador',
-        description: 'Torneira da cozinha está vazando',
-        date: 'Hoje, 14:30',
-        professional: 'Carlos Silva',
-      },
-    ],
-    completed: [
-      {
-        id: 2,
-        category: 'Eletricista',
-        description: 'Instalação de ventilador de teto',
-        date: '15 Abr',
-        professional: 'João Alves',
-      },
-      {
-        id: 3,
-        category: 'Pintor',
-        description: 'Pintura da sala e quarto',
-        date: '10 Abr',
-        professional: 'Maria Santos',
-      },
-    ],
-    cancelled: [
-      {
-        id: 4,
-        category: 'Diarista',
-        description: 'Limpeza geral do apartamento',
-        date: '08 Abr',
-      },
-    ],
-  };
+  const { data: customer } = useFetch<any>(
+    user ? `/api/Customers/by-user/${user.id}` : null
+  );
+
+  const { data: fetchedServices, loading, error, refetch } = useFetch<Service[]>(
+    customer ? `/api/Services/by-customer/${customer.id}` : null
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (customer) {
+        refetch();
+      }
+    }, [customer, refetch])
+  );
+
+  const services = useMemo(() => {
+    const defaultGrouping: Record<'in-progress' | 'completed' | 'cancelled', Service[]> = {
+      'in-progress': [],
+      'completed': [],
+      'cancelled': [],
+    };
+    if (!fetchedServices) return defaultGrouping;
+
+    return fetchedServices.reduce((acc, curr) => {
+      const rawStatus = curr.status || 'in-progress';
+      const s = rawStatus.toLowerCase().replace(/[^a-z]/g, '');
+      let mappedStatus: 'in-progress' | 'completed' | 'cancelled' = 'in-progress';
+
+      if (s === 'completed' || s === 'concluido' || s === 'done' || s === 'finalizado') {
+        mappedStatus = 'completed';
+      } else if (s === 'cancelled' || s === 'cancelado' || s === 'refused') {
+        mappedStatus = 'cancelled';
+      } else {
+        mappedStatus = 'in-progress';
+      }
+
+      acc[mappedStatus].push(curr);
+      return acc;
+    }, defaultGrouping);
+  }, [fetchedServices]);
 
   return (
     <View style={styles.container}>
@@ -75,25 +93,36 @@ export default function MyServices() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.servicesList}>
-          {services[activeTab].map((service) => (
-            <ServiceCard
-              key={service.id}
-              category={service.category}
-              description={service.description}
-              status={activeTab as any}
-              date={service.date}
-              professional={service.professional}
-              onClick={() => router.push(`/client/tracking/${service.id}`)}
-            />
-          ))}
+        {loading ? (
+          <View style={{ padding: 48, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={WorkEzTheme.colors.primary} />
+            <Text style={{ marginTop: 16, color: WorkEzTheme.colors.textSecondary }}>Carregando serviços...</Text>
+          </View>
+        ) : error ? (
+          <View style={{ padding: 48, alignItems: 'center' }}>
+            <Text style={{ color: WorkEzTheme.colors.danger }}>{error}</Text>
+          </View>
+        ) : (
+          <View style={styles.servicesList}>
+            {services[activeTab].map((service) => (
+              <ServiceCard
+                key={service.id}
+                category={service.category}
+                description={service.description}
+                status={activeTab as any}
+                date={service.date}
+                professional={service.professional}
+                onClick={() => router.push(`/client/tracking/${service.id}`)}
+              />
+            ))}
 
-          {services[activeTab].length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Nenhum serviço encontrado</Text>
-            </View>
-          )}
-        </View>
+            {services[activeTab].length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Nenhum serviço encontrado</Text>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -105,21 +134,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: AntigravityTheme.colors.backgroundCard,
+    backgroundColor: WorkEzTheme.colors.backgroundCard,
     paddingHorizontal: 24,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: AntigravityTheme.colors.border,
+    borderBottomColor: WorkEzTheme.colors.border,
   },
   headerTitle: {
-    ...AntigravityTheme.typography.xl,
-    fontWeight: AntigravityTheme.typography.fontWeight.bold,
-    color: AntigravityTheme.colors.text,
+    ...WorkEzTheme.typography.xl,
+    fontWeight: WorkEzTheme.typography.fontWeight.bold,
+    color: WorkEzTheme.colors.text,
   },
   tabsContainer: {
-    backgroundColor: AntigravityTheme.colors.backgroundCard,
+    backgroundColor: WorkEzTheme.colors.backgroundCard,
     borderBottomWidth: 1,
-    borderBottomColor: AntigravityTheme.colors.border,
+    borderBottomColor: WorkEzTheme.colors.border,
     paddingHorizontal: 24,
   },
   tabsRow: {
@@ -132,12 +161,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   tabText: {
-    ...AntigravityTheme.typography.base,
-    color: AntigravityTheme.colors.textSecondary,
+    ...WorkEzTheme.typography.base,
+    color: WorkEzTheme.colors.textSecondary,
   },
   tabTextActive: {
     color: '#2563EB',
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
+    fontWeight: WorkEzTheme.typography.fontWeight.semibold,
   },
   activeIndicator: {
     position: 'absolute',
@@ -159,7 +188,7 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
   },
   emptyText: {
-    ...AntigravityTheme.typography.base,
-    color: AntigravityTheme.colors.textSecondary,
+    ...WorkEzTheme.typography.base,
+    color: WorkEzTheme.colors.textSecondary,
   },
 });

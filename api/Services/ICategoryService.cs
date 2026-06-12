@@ -1,15 +1,12 @@
-using WorkEz.Api.DTOs;
+using WorkEz.Api.Entities;
 
 namespace WorkEz.Api.Services;
 
-/// <summary>
-/// Service interface for managing product categories.
-/// </summary>
 public interface ICategoryService
 {
-    Task<IEnumerable<CategoryDto>> GetAllCategoriesAsync();
-    Task<CategoryDto?> GetCategoryByIdAsync(Guid id);
-    Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto dto);
-    Task<CategoryDto?> UpdateCategoryAsync(Guid id, CreateCategoryDto dto);
-    Task<bool> DeleteCategoryAsync(Guid id);
+    Task<IEnumerable<Category>> GetAllAsync();
+    Task<Category?> GetByIdAsync(Guid id);
+    Task CreateAsync(Category category);
+    Task UpdateAsync(Category category);
+    Task DeleteAsync(Guid id);
 }

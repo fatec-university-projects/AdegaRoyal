@@ -1,56 +1,86 @@
-import { useState } from 'react';
-import { useRouter } from 'expo-router';
-import { DollarSign, Star, Briefcase, TrendingUp } from 'lucide-react-native';
-import { View, Text, TouchableOpacity, Pressable, StyleSheet, ScrollView } from 'react-native';
-import { AntigravityTheme } from '../../constants/theme';
+import { useMemo, useCallback } from 'react';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { DollarSign, Star, Briefcase } from 'lucide-react-native';
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { WorkEzTheme } from '../../constants/theme';
+import { useAuth } from '../../contexts/AuthContext';
+import { useFetch } from '../../hooks/useFetch';
 
 export default function ProviderHome() {
   const router = useRouter();
-  const [isOnline, setIsOnline] = useState(true);
+  const { user } = useAuth();
+
+  const { data: rawProvider, refetch: refetchProvider } = useFetch<any>(
+    user ? `/api/ServiceProviders/by-user/${user.id}` : null
+  );
+
+  const { data: services, loading, error, refetch: refetchServices } = useFetch<any[]>(
+    user ? `/api/Services/by-provider-user/${user.id}` : null
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        refetchProvider();
+        refetchServices();
+      }
+    }, [user, refetchProvider, refetchServices])
+  );
+
+  const stats = useMemo(() => {
+    if (!services) {
+      return {
+        monthlyEarnings: 0,
+        availableBalance: 0,
+        averageRating: rawProvider?.averageRating ?? 5.0,
+        completedCount: 0
+      };
+    }
+
+    const completed = services.filter(s => s.status === 'completed');
+    const waitingPayment = services.filter(s => s.status === 'waiting-payment');
+
+    // Saldo disponível: saldo obtido a partir dos serviços pagos (completed)
+    const availableBalance = completed.reduce((sum, s) => sum + (s.price || 0), 0);
+
+    // Ganhos do mês: soma de todos os trabalhos (concluídos e aguardando pagamento)
+    const monthlyEarnings = services
+      .filter(s => s.status === 'completed' || s.status === 'waiting-payment')
+      .reduce((sum, s) => sum + (s.price || 0), 0);
+
+    // Serviços concluídos: quantidade de serviços concluídos ou em aguardando pagamento
+    const completedCount = completed.length + waitingPayment.length;
+
+    return {
+      monthlyEarnings,
+      availableBalance,
+      averageRating: rawProvider?.averageRating ?? 5.0,
+      completedCount
+    };
+  }, [services, rawProvider]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.headerBackground}>
         <Text style={styles.greetingText}>
-          Olá, Carlos! 👋
+          Olá, {user?.name?.split(' ')[0] || 'Prestador'}! 👋
         </Text>
-
-        <View style={styles.statusCard}>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusLabel}>Você está</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => setIsOnline(!isOnline)}
-              style={[
-                styles.toggleContainer,
-                isOnline ? styles.toggleContainerActive : styles.toggleContainerInactive
-              ]}
-            >
-              <View
-                style={[
-                  styles.toggleThumb,
-                  isOnline ? styles.toggleThumbActive : styles.toggleThumbInactive
-                ]}
-              />
-            </TouchableOpacity>
-          </View>
-          <Text style={[styles.statusText, !isOnline && styles.statusTextOffline]}>
-            {isOnline ? 'Online' : 'Offline'}
-          </Text>
-          <Text style={styles.statusDescription}>
-            {isOnline ? 'Pronto para receber chamados' : 'Você não receberá chamados'}
-          </Text>
-        </View>
       </View>
 
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
           <View style={styles.statIconRow}>
             <View style={[styles.statIconWrapper, { backgroundColor: 'rgba(38, 255, 245, 0.1)' }]}>
-              <DollarSign size={16} color={AntigravityTheme.colors.primary} />
+              <DollarSign size={16} color={WorkEzTheme.colors.primary} />
             </View>
           </View>
-          <Text style={styles.statValue}>R$ 3.450</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={WorkEzTheme.colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+          ) : (
+            <Text style={styles.statValue}>
+              R$ {stats.monthlyEarnings.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
           <Text style={styles.statLabel}>Ganhos do mês</Text>
         </View>
 
@@ -60,64 +90,46 @@ export default function ProviderHome() {
               <DollarSign size={16} color="#2563EB" />
             </View>
           </View>
-          <Text style={styles.statValue}>R$ 850</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#2563EB" style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+          ) : (
+            <Text style={styles.statValue}>
+              R$ {stats.availableBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
           <Text style={styles.statLabel}>Saldo disponível</Text>
         </View>
 
         <View style={styles.statCard}>
           <View style={styles.statIconRow}>
             <View style={[styles.statIconWrapper, { backgroundColor: 'rgba(251, 191, 36, 0.1)' }]}>
-              <Star size={16} color={AntigravityTheme.colors.warning} />
+              <Star size={16} color={WorkEzTheme.colors.warning} />
             </View>
           </View>
-          <Text style={styles.statValue}>4.9</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={WorkEzTheme.colors.warning} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+          ) : (
+            <Text style={styles.statValue}>
+              {stats.averageRating.toFixed(1)}
+            </Text>
+          )}
           <Text style={styles.statLabel}>Nota média</Text>
         </View>
 
         <View style={styles.statCard}>
           <View style={styles.statIconRow}>
             <View style={[styles.statIconWrapper, { backgroundColor: 'rgba(38, 255, 245, 0.1)' }]}>
-              <Briefcase size={16} color={AntigravityTheme.colors.primary} />
+              <Briefcase size={16} color={WorkEzTheme.colors.primary} />
             </View>
           </View>
-          <Text style={styles.statValue}>248</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={WorkEzTheme.colors.primary} style={{ alignSelf: 'flex-start', marginVertical: 4 }} />
+          ) : (
+            <Text style={styles.statValue}>
+              {stats.completedCount}
+            </Text>
+          )}
           <Text style={styles.statLabel}>Serviços concluídos</Text>
-        </View>
-      </View>
-
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>
-          Resumo da semana
-        </Text>
-
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeaderRow}>
-            <View style={[styles.summaryIconWrapper, { backgroundColor: 'rgba(38, 255, 245, 0.1)' }]}>
-              <TrendingUp size={20} color={AntigravityTheme.colors.primary} />
-            </View>
-            <View style={styles.summaryHeaderText}>
-              <Text style={styles.summaryTitle}>Ótimo desempenho!</Text>
-              <Text style={styles.summarySubtitle}>Você cresceu 15% esta semana</Text>
-            </View>
-          </View>
-
-          <View style={styles.summaryList}>
-            <View style={styles.summaryListItem}>
-              <Text style={styles.summaryListLabel}>Serviços concluídos</Text>
-              <Text style={styles.summaryListValue}>12</Text>
-            </View>
-            <View style={styles.summaryListItem}>
-              <Text style={styles.summaryListLabel}>Taxa de aceitação</Text>
-              <Text style={styles.summaryListValue}>92%</Text>
-            </View>
-            <View style={styles.summaryListItem}>
-              <Text style={styles.summaryListLabel}>Avaliação média</Text>
-              <View style={styles.summaryRatingRow}>
-                <Text style={styles.summaryListValue}>4.9</Text>
-                <Star size={16} color={AntigravityTheme.colors.warning} fill={AntigravityTheme.colors.warning} />
-              </View>
-            </View>
-          </View>
         </View>
       </View>
 
@@ -125,13 +137,13 @@ export default function ProviderHome() {
         <View style={styles.tipCard}>
           <Text style={styles.tipTitle}>Dica profissional 💡</Text>
           <Text style={styles.tipDescription}>
-            Profissionais que mantêm fotos atualizadas no portfólio recebem 40% mais chamados.
+            Profissionais que mantêm seus dados e especialidades atualizados recebem 40% mais chamados.
           </Text>
           <Pressable
-            onPress={() => router.push('/provider/portfolio')}
+            onPress={() => router.push('/provider/settings')}
             style={styles.tipButton}
           >
-            <Text style={styles.tipButtonText}>Atualizar portfólio</Text>
+            <Text style={styles.tipButtonText}>Atualizar perfil</Text>
           </Pressable>
         </View>
       </View>
@@ -146,77 +158,21 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: AntigravityTheme.spacing.xl,
+    paddingBottom: WorkEzTheme.spacing.xl,
   },
   headerBackground: {
-    backgroundColor: '#2563EB', // For full effect you'd use expo-linear-gradient but standard RN doesn't support css gradients.
+    backgroundColor: '#2563EB',
     paddingHorizontal: 24,
     paddingTop: 48,
-    paddingBottom: 32,
+    paddingBottom: 24,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
   },
   greetingText: {
-    ...AntigravityTheme.typography.xl,
-    fontWeight: AntigravityTheme.typography.fontWeight.bold,
+    ...WorkEzTheme.typography.xl,
+    fontWeight: WorkEzTheme.typography.fontWeight.bold,
     color: '#FFFFFF',
-    marginBottom: 24,
-  },
-  statusCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  statusLabel: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    ...AntigravityTheme.typography.sm,
-  },
-  toggleContainer: {
-    width: 64,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    padding: 4,
-  },
-  toggleContainerActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  toggleContainerInactive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  toggleThumb: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  toggleThumbActive: {
-    backgroundColor: AntigravityTheme.colors.primary,
-    alignSelf: 'flex-end',
-  },
-  toggleThumbInactive: {
-    backgroundColor: '#FFFFFF',
-    alignSelf: 'flex-start',
-  },
-  statusText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  statusTextOffline: {
-    color: 'rgba(255, 255, 255, 0.7)',
-  },
-  statusDescription: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    ...AntigravityTheme.typography.sm,
-    marginTop: 4,
+    marginBottom: 0,
   },
   statsContainer: {
     flexDirection: 'row',
@@ -227,11 +183,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   statCard: {
-    backgroundColor: AntigravityTheme.colors.backgroundCard,
+    backgroundColor: WorkEzTheme.colors.backgroundCard,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: AntigravityTheme.colors.border,
+    borderColor: WorkEzTheme.colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -252,81 +208,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   statValue: {
-    ...AntigravityTheme.typography.xl,
-    fontWeight: AntigravityTheme.typography.fontWeight.bold,
-    color: AntigravityTheme.colors.text,
+    ...WorkEzTheme.typography.lg,
+    fontWeight: WorkEzTheme.typography.fontWeight.bold,
+    color: WorkEzTheme.colors.text,
+    marginVertical: 2,
   },
   statLabel: {
-    ...AntigravityTheme.typography.sm,
-    color: AntigravityTheme.colors.textSecondary,
-  },
-  sectionContainer: {
-    paddingHorizontal: 24,
-    marginTop: 24,
-  },
-  sectionTitle: {
-    ...AntigravityTheme.typography.lg,
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
-    color: AntigravityTheme.colors.text,
-    marginBottom: 16,
-  },
-  summaryCard: {
-    backgroundColor: AntigravityTheme.colors.backgroundCard,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: AntigravityTheme.colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  summaryHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  summaryIconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryHeaderText: {
-    flex: 1,
-  },
-  summaryTitle: {
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
-    color: AntigravityTheme.colors.text,
-  },
-  summarySubtitle: {
-    ...AntigravityTheme.typography.sm,
-    color: AntigravityTheme.colors.textSecondary,
-  },
-  summaryList: {
-    gap: 8,
-  },
-  summaryListItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  summaryListLabel: {
-    ...AntigravityTheme.typography.sm,
-    color: AntigravityTheme.colors.textSecondary,
-  },
-  summaryListValue: {
-    ...AntigravityTheme.typography.sm,
-    fontWeight: AntigravityTheme.typography.fontWeight.medium,
-    color: AntigravityTheme.colors.text,
-  },
-  summaryRatingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    ...WorkEzTheme.typography.sm,
+    color: WorkEzTheme.colors.textSecondary,
   },
   sectionContainerBottom: {
     paddingHorizontal: 24,
@@ -339,12 +228,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   tipTitle: {
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
+    fontWeight: WorkEzTheme.typography.fontWeight.semibold,
     color: '#FFFFFF',
     marginBottom: 8,
   },
   tipDescription: {
-    ...AntigravityTheme.typography.sm,
+    ...WorkEzTheme.typography.sm,
     color: 'rgba(255, 255, 255, 0.9)',
     lineHeight: 20,
   },
@@ -357,8 +246,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   tipButtonText: {
-    ...AntigravityTheme.typography.sm,
-    fontWeight: AntigravityTheme.typography.fontWeight.medium,
+    ...WorkEzTheme.typography.sm,
+    fontWeight: WorkEzTheme.typography.fontWeight.medium,
     color: '#FFFFFF',
   },
 });

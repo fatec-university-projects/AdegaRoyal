@@ -3,7 +3,8 @@ import { useRouter } from 'expo-router';
 import { ShieldCheck, Zap, CreditCard, ChevronRight } from 'lucide-react-native';
 import { Button } from '../components/Button';
 import { View, Text, StyleSheet } from 'react-native';
-import { AntigravityTheme } from '../constants/theme';
+import { WorkEzTheme } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const slides = [
   {
@@ -25,13 +26,14 @@ const slides = [
 
 export default function Onboarding() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const handleNext = () => {
     if (currentSlide < slides.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
-      router.push('/profile-choice');
+      router.push('/profile-choice' as any);
     }
   };
 
@@ -42,7 +44,7 @@ export default function Onboarding() {
     <View style={styles.container}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Icon size={48} color={AntigravityTheme.colors.primary} />
+          <Icon size={48} color={WorkEzTheme.colors.primary} />
         </View>
 
         <Text style={styles.title}>
@@ -60,27 +62,23 @@ export default function Onboarding() {
               style={[
                 styles.dot,
                 index === currentSlide ? styles.dotActive : styles.dotInactive
-              ]}
+               ]}
             />
           ))}
         </View>
       </View>
 
-      <View style={styles.footer}>
-        <Button fullWidth onPress={handleNext}>
-          <View style={styles.buttonContent}>
-            <Text style={styles.buttonText}>
-              {currentSlide < slides.length - 1 ? 'Continuar' : 'Começar'}
-            </Text>
-            <ChevronRight size={20} color="#FFFFFF" style={styles.buttonIcon} />
-          </View>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}>
+        <Button variant="secondary" fullWidth onPress={handleNext}>
+          {currentSlide < slides.length - 1 ? 'Continuar' : 'Começar'}
+          <ChevronRight size={20} color="#2563EB" />
         </Button>
 
         {currentSlide < slides.length - 1 && (
           <Button
             variant="ghost"
             fullWidth
-            onPress={() => router.push('/profile-choice')}
+            onPress={() => router.push('/profile-choice' as any)}
           >
             Pular
           </Button>
@@ -93,7 +91,7 @@ export default function Onboarding() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AntigravityTheme.colors.background,
+    backgroundColor: WorkEzTheme.colors.background,
   },
   content: {
     flex: 1,
@@ -111,15 +109,15 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   title: {
-    ...AntigravityTheme.typography.2xl,
-    fontWeight: AntigravityTheme.typography.fontWeight.bold,
-    color: AntigravityTheme.colors.text,
+    ...WorkEzTheme.typography['2xl'],
+    fontWeight: WorkEzTheme.typography.fontWeight.bold,
+    color: WorkEzTheme.colors.text,
     textAlign: 'center',
     marginBottom: 16,
   },
   description: {
-    ...AntigravityTheme.typography.base,
-    color: AntigravityTheme.colors.textSecondary,
+    ...WorkEzTheme.typography.base,
+    color: WorkEzTheme.colors.textSecondary,
     textAlign: 'center',
     maxWidth: 300,
     lineHeight: 24,
@@ -135,11 +133,11 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 32,
-    backgroundColor: AntigravityTheme.colors.primary,
+    backgroundColor: WorkEzTheme.colors.primary,
   },
   dotInactive: {
     width: 8,
-    backgroundColor: AntigravityTheme.colors.border,
+    backgroundColor: WorkEzTheme.colors.border,
   },
   footer: {
     padding: 24,
@@ -152,7 +150,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#FFFFFF',
-    fontWeight: AntigravityTheme.typography.fontWeight.semibold,
+    fontWeight: WorkEzTheme.typography.fontWeight.semibold,
   },
   buttonIcon: {
     marginLeft: 8,

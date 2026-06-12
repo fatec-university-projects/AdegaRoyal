@@ -1,84 +1,63 @@
-using WorkEz.Api.DTOs;
-using WorkEz.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using WorkEz.Api.Data;
+using WorkEz.Api.Entities;
+using WorkEz.Api.Services;
 
 namespace WorkEz.Api.Controllers;
 
 /// <summary>
-/// API endpoints for managing product categories.
+/// Manages service categories (e.g. Electrical, Plumbing, Painting).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-public class CategoriesController(ICategoryService categoryService) : ControllerBase
+public class CategoriesController(AppDbContext context, ICategoryService categoryService) : ControllerBase
 {
-    /// <summary>
-    /// Get all product categories.
-    /// </summary>
+    [AllowAnonymous]
     [HttpGet]
-    [AllowAnonymous]
-    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetAllCategories()
+    public async Task<IActionResult> GetAllCategories()
     {
-        var categories = await categoryService.GetAllCategoriesAsync();
-        return Ok(categories);
+        var list = await categoryService.GetAllAsync();
+        return Ok(list);
     }
 
-    /// <summary>
-    /// Get a specific category by ID.
-    /// </summary>
-    [HttpGet("{id:guid}")]
     [AllowAnonymous]
-    public async Task<ActionResult<CategoryDto>> GetCategoryById(Guid id)
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetCategoryById(Guid id)
     {
-        var category = await categoryService.GetCategoryByIdAsync(id);
-        if (category == null)
-            return NotFound(new { message = "Category not found" });
-
-        return Ok(category);
+        var entity = await categoryService.GetByIdAsync(id);
+        return entity is null ? NotFound() : Ok(entity);
     }
 
-    /// <summary>
-    /// Create a new category (Admin only).
-    /// </summary>
-    [HttpPost]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto dto)
+    [HttpPost]
+    public async Task<IActionResult> CreateCategory([FromBody] Category category)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        var category = await categoryService.CreateCategoryAsync(dto);
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        await categoryService.CreateAsync(category);
         return CreatedAtAction(nameof(GetCategoryById), new { id = category.Id }, category);
     }
 
-    /// <summary>
-    /// Update an existing category (Admin only).
-    /// </summary>
-    [HttpPut("{id:guid}")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<CategoryDto>> UpdateCategory(Guid id, [FromBody] CreateCategoryDto dto)
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateCategory(Guid id, [FromBody] Category category)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        var category = await categoryService.UpdateCategoryAsync(id, dto);
-        if (category == null)
-            return NotFound(new { message = "Category not found" });
-
-        return Ok(category);
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        if (id != category.Id) return BadRequest(new { message = "Id mismatch." });
+        var existing = await categoryService.GetByIdAsync(id);
+        if (existing is null) return NotFound();
+        await categoryService.UpdateAsync(category);
+        return NoContent();
     }
 
-    /// <summary>
-    /// Delete a category (Admin only).
-    /// </summary>
-    [HttpDelete("{id:guid}")]
+    [HttpPatch("{id}/status")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> DeleteCategory(Guid id)
+    public async Task<IActionResult> UpdateCategoryStatus(Guid id, bool status)
     {
-        var success = await categoryService.DeleteCategoryAsync(id);
-        if (!success)
-            return NotFound(new { message = "Category not found" });
-
+        var entity = await categoryService.GetByIdAsync(id);
+        if (entity is null) return NotFound();
+        entity.Status = status ? Enums.CategoryStatus.Active : Enums.CategoryStatus.Inactive;
+        await categoryService.UpdateAsync(entity);
         return NoContent();
     }
 }

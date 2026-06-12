@@ -1,14 +1,21 @@
+using WorkEz.Api.Enums;
+
 namespace WorkEz.Api.Entities;
 
 /// <summary>
-/// Represents a product category (e.g., Red Wine, White Wine, Beer).
+/// Represents a service category such as Electrical, Plumbing, or Painting.
 /// </summary>
-public class Category(Guid id, string? name, string? description = null)
+public class Category
 {
-    public Guid Id { get; } = id;
-    public string Name { get; set; } = name ?? string.Empty;
-    public string? Description { get; set; } = description;
+    public Guid Id { get; init; } = Guid.NewGuid();
 
-    // Navigation property
-    public ICollection<Product> Products { get; set; } = new List<Product>();
+    public string Name { get; set; } = string.Empty;
+
+    public string? Description { get; set; }
+
+    public CategoryStatus Status { get; set; } = CategoryStatus.Active;
+
+    // ── Navigation properties ──────────────────────────────────────────────────
+    public ICollection<ProviderCategory> ProviderCategories { get; set; } = [];
+    public ICollection<Service> Services { get; set; } = [];
 }
